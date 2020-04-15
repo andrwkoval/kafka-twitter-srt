@@ -5,11 +5,11 @@ from kafka import KafkaConsumer, TopicPartition
 from producer import SERVERS
 import fire
 import boto3
+from botocore.exceptions import NoCredentialsError
 
 
 def create_report(n4: int = 3, n5: int = 3):
     users_consumer = KafkaConsumer(
-        "users",
         bootstrap_servers=SERVERS,
         auto_offset_reset="earliest",
         enable_auto_commit=True,
@@ -18,7 +18,6 @@ def create_report(n4: int = 3, n5: int = 3):
     )
 
     tweets_consumer = KafkaConsumer(
-        "tweets",
         bootstrap_servers=SERVERS,
         auto_offset_reset='earliest',
         enable_auto_commit=False,
@@ -28,15 +27,18 @@ def create_report(n4: int = 3, n5: int = 3):
     report_time = datetime.datetime.now()
 
     question1 = list_all_accounts(users_consumer)
-    question2 = tweets_from_active(tweets_consumer, report_time)
-    question3 = aggregated_statistics(tweets_consumer, report_time)
-    question4 = most_producing_accounts(tweets_consumer, report_time, n4)
-    question5 = most_popular_hashtags(tweets_consumer, report_time, n5)
-
     upload_result("question_1.json", question1)
+
+    question2 = tweets_from_active(tweets_consumer, report_time)
     upload_result("question_2.json", question2)
+
+    question3 = aggregated_statistics(tweets_consumer, report_time)
     upload_result("question_3.json", question3)
+
+    question4 = most_producing_accounts(tweets_consumer, report_time, n4)
     upload_result("question_4.json", question4)
+
+    question5 = most_popular_hashtags(tweets_consumer, report_time, n5)
     upload_result("question_5.json", question5)
 
 
@@ -53,20 +55,51 @@ def upload_result(filename, result):
         s3.upload_file(filename, "", filename)
         print("Uploaded!")
     except FileNotFoundError:
-        print("File not found")
+        print("The file was not found")
+    except NoCredentialsError:
+        print("Credentials not available")
 
+
+def all_users(consumer: KafkaConsumer):
+    partitions = [TopicPartition("users", partition) for partition in consumer.partitions_for_topic("users")]
+    consumer.assign(partitions)
+    sizes = partition_sizes(consumer, partitions)
+    while sum(sizes.values()) > 0:
+        data = next(consumer)
+        if sizes[data.partition] <= 0: continue
+        sizes[data.partition] -= 1
+        yield data
+
+
+def all_tweets(consumer: KafkaConsumer):
+    partitions = [TopicPartition("tweets", partition) for partition in consumer.partitions_for_topic("tweets")]
+    consumer.assign(partitions)
+    sizes = partition_sizes(consumer, partitions)
+    while sum(sizes.values()) > 0:
+        data = next(consumer)
+        if sizes[data.partition] <= 0: continue
+        sizes[data.partition] -= 1
+        yield data
+
+
+def partition_sizes(consumer, partitions):
+    consumer.seek_to_end()
+    sizes = {partition.partition: consumer.position(partition) for partition in partitions}
+    consumer.seek_to_beginning()
+    for partition in partitions: sizes[partition.partition] -= consumer.position(partition)
+    return sizes
 
 
 def list_all_accounts(consumer):
     users = set()
-    for user in consumer:
+    for user in all_users(consumer):
         users.add(user.value)
     return list(users)
 
 
 def tweets_from_active(consumer, report_time: datetime.datetime):
     users = dict()
-    for record in consumer:
+    for record in all_tweets(consumer):
         tweet = record.value
         if tweet["user_id"] not in users.keys():
             users[tweet["user_id"]] = {"tweets": [], "count": 0}
@@ -90,7 +123,7 @@ def tweets_from_active(consumer, report_time: datetime.datetime):
 
 def aggregated_statistics(consumer, report_time: datetime.datetime):
     users = dict()
-    for record in consumer:
+    for record in all_tweets(consumer):
         tweet = record.value
         if tweet["user_id"] not in users.keys():
             users[tweet["user_id"]] = [0, 0, 0]
@@ -113,7 +146,7 @@ def aggregated_statistics(consumer, report_time: datetime.datetime):
 
 def most_producing_accounts(consumer, report_time: datetime.datetime, n: int):
     users = dict()
-    for record in consumer:
+    for record in all_tweets(consumer):
         tweet = record.value
         if tweet["user_id"] not in users.keys():
             users[tweet["user_id"]] = 0
@@ -122,7 +155,7 @@ def most_producing_accounts(consumer, report_time: datetime.datetime, n: int):
         created_at = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
         diff = report_time - created_at
         if diff.seconds < n * 60 * 60:
-            users[tweet["user_id"] ] += 1
+            users[tweet["user_id"]] += 1
 
     top_users = sorted(users.items(), key=lambda x: x[1], reverse=True)[:20]
     return [i[0] for i in top_users]
@@ -130,7 +163,7 @@ def most_producing_accounts(consumer, report_time: datetime.datetime, n: int):
 
 def most_popular_hashtags(consumer, report_time: datetime.datetime, n: int):
     hashtags = dict()
-    for record in consumer:
+    for record in all_tweets(consumer):
         tweet = record.value
         date = tweet["created_at"].split(".")[0]
         created_at = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")

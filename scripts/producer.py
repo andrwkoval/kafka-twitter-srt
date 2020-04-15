@@ -36,7 +36,7 @@ if __name__ == '__main__':
                 "created_at": str(datetime.datetime.now()),
                 "content": data.text
             }).add_errback(lambda x: print(f"#error# {x}"))
-        # sleep(1)
+        sleep(1)
 
     users_producer.flush()
     tweets_producer.flush()
