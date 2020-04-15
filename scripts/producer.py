@@ -12,12 +12,15 @@ users_producer = KafkaProducer(bootstrap_servers=SERVERS,
 tweets_producer = KafkaProducer(bootstrap_servers=SERVERS,
                                 value_serializer=lambda x: dumps(x).encode('utf-8'))
 
-df = pd.read_csv(DATASET, chunksize=40, names=['target',
-                                               'id',
-                                               'date',
-                                               'flag',
-                                               'user',
-                                               'text'])
+df = pd.read_csv(DATASET,
+                 chunksize=40,
+                 encoding="ISO-8859-1",
+                 names=['target',
+                        'id',
+                        'date',
+                        'flag',
+                        'user',
+                        'text'])
 
 if __name__ == '__main__':
     unique_users = set()
@@ -33,8 +36,7 @@ if __name__ == '__main__':
                 "created_at": str(datetime.datetime.now()),
                 "content": data.text
             }).add_errback(lambda x: print(f"#error# {x}"))
-
-            sleep(1)
+        # sleep(1)
 
     users_producer.flush()
     tweets_producer.flush()

@@ -1,0 +1,13 @@
+The system, which I built has two topics: one for users and another one for tweets.
+In this way we can more conveniently create reports based on users or tweets.
+
+Components:
+    a) producer - reads dataset, makes minor changes and then sends data to Kafka.
+        1) for topic 'users' it sends only user_id
+        2) for topic 'tweets' it sends user_id, created_at and content
+    b) consumer - contains functions needed to create the reports
+        1) build report to match the requirement
+        2) save results to according json files and place on S3 bucket
+
+Files:
+question_<n>.json (n is number of question for report) - example file with results (not a lot of data)
