@@ -44,15 +44,16 @@ def upload_result(filename, result):
     with open(filename, "w") as write_file:
         dump(result, write_file)
 
+    # specify credentials
     s3 = boto3.client('s3', aws_access_key_id="",
                       aws_secret_access_key="",
                       aws_session_token="")
-
     try:
-        s3.upload_file(filename, "kafka_twitter_bucket", filename)
-        print("Upload Successful")
+        # specify bucket name
+        s3.upload_file(filename, "", filename)
+        print("Uploaded!")
     except FileNotFoundError:
-        print("The file was not found")
+        print("File not found")
 
 
 
